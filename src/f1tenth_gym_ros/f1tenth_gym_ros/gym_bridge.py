@@ -83,10 +83,17 @@ class GymBridge(Node):
             raise ValueError('num_agents should be an int.')
 
         # env backend
-        self.env = gym.make('f110_gym:f110-v0',
-                            map=self.get_parameter('map_path').value,
-                            map_ext=self.get_parameter('map_img_ext').value,
-                            num_agents=num_agents)
+        try:
+            self.env = gym.make('f110_gym:f110-v0',
+                                map=self.get_parameter('map_path').value,
+                                map_ext=self.get_parameter('map_img_ext').value,
+                                num_agents=num_agents,
+                                disable_env_checker=True).unwrapped
+        except TypeError:
+            self.env = gym.make('f110_gym:f110-v0',
+                                map=self.get_parameter('map_path').value,
+                                map_ext=self.get_parameter('map_img_ext').value,
+                                num_agents=num_agents).unwrapped
 
         sx = self.get_parameter('sx').value
         sy = self.get_parameter('sy').value
