@@ -135,14 +135,14 @@ Rather than driving at a constant velocity, the vehicle dynamically modulates it
 
 | Steering Angle $|\delta|$ | Forward Clearance $d_{front}$ | Driving Condition | Target Speed |
 | :--- | :--- | :--- | :--- |
-| $< 0.05$ rad ($< 2.9^\circ$) | $> 5.2$ m | Main Straight | **6.8 m/s** |
-| $< 0.11$ rad ($< 6.3^\circ$) | $> 3.8$ m | Sweeping Curve | **5.0 m/s** |
-| $0.11 \le |\delta| < 0.18$ rad | Any | Medium Corner | **3.6 m/s** |
-| $0.18 \le |\delta| < 0.26$ rad | Any | Tight Corner | **2.6 m/s** |
-| $\ge 0.26$ rad ($\ge 15^\circ$) | Any | Sharp Hairpin | **2.1 m/s** |
+| $< 0.05$ rad ($< 2.9^\circ$) | $> 5.5$ m | Main Straight | **8.2 m/s** |
+| $< 0.10$ rad ($< 5.7^\circ$) | $> 4.0$ m | Sweeping Curve | **6.0 m/s** |
+| $0.10 \le |\delta| < 0.17$ rad | Any | Medium Corner | **4.4 m/s** |
+| $0.17 \le |\delta| < 0.25$ rad | Any | Tight Chicane | **3.2 m/s** |
+| $\ge 0.25$ rad ($\ge 14.3^\circ$) | Any | Sharp Hairpin | **2.4 m/s** |
 
 Longitudinal acceleration and deceleration are rate-limited to avoid wheel slip:
-$$v(t + \Delta t) = \begin{cases} \min(v_{target}, v(t) + a_{max} \Delta t), & v_{target} > v(t) \quad (a_{max} = 6.0 \text{ m/s}^2) \\ \max(v_{target}, v(t) - d_{max} \Delta t), & v_{target} < v(t) \quad (d_{max} = 8.5 \text{ m/s}^2) \end{cases}$$
+$$v(t + \Delta t) = \begin{cases} \min(v_{target}, v(t) + a_{max} \Delta t), & v_{target} > v(t) \quad (a_{max} = 7.8 \text{ m/s}^2) \\ \max(v_{target}, v(t) - d_{max} \Delta t), & v_{target} < v(t) \quad (d_{max} = 9.2 \text{ m/s}^2) \end{cases}$$
 
 ---
 
@@ -285,23 +285,24 @@ The controller was tested across **10 consecutive laps** on **Circuit Zandvoort*
 - **Result:** **10 / 10 Laps Completed with ZERO Collisions (100% Success Rate).**
 
 ### Challenge 2: Fastest Lap Time
-- **Fastest Lap:** **87.32 s** (Lap 3)
-- **Average Lap Time:** **87.96 s**
-- **Average Velocity:** **4.40 m/s** (~15.8 km/h on a 1/10-scale model)
-- **Total Distance Navigated:** **3,869.6 meters**
+- **Fastest Lap:** **74.86 s** (Lap 4) *(12.46 seconds faster than baseline!)*
+- **Average Lap Time:** **76.41 s**
+- **Average Velocity:** **5.06 m/s** (~18.2 km/h on a 1/10-scale model)
+- **Top Speed on Straights:** **8.2 m/s** (~29.5 km/h on a 1/10-scale model)
+- **Total Distance Navigated:** **3,856.2 meters**
 
 | Lap Number | Lap Time (s) | Average Speed (m/s) | Status |
 | :---: | :---: | :---: | :---: |
-| Lap 1 | 88.46 s | 4.37 m/s | ✅ Clean (Standing start) |
-| Lap 2 | 88.08 s | 4.39 m/s | ✅ Clean |
-| **Lap 3** | **87.32 s** | **4.43 m/s** | 🏆 **FASTEST LAP** |
-| Lap 4 | 87.73 s | 4.41 m/s | ✅ Clean |
-| Lap 5 | 88.58 s | 4.37 m/s | ✅ Clean |
-| Lap 6 | 88.83 s | 4.36 m/s | ✅ Clean |
-| Lap 7 | 87.50 s | 4.42 m/s | ✅ Clean |
-| Lap 8 | 87.48 s | 4.42 m/s | ✅ Clean |
-| Lap 9 | 87.77 s | 4.41 m/s | ✅ Clean |
-| Lap 10 | 87.81 s | 4.41 m/s | ✅ Clean |
+| Lap 1 | 77.77 s | 4.96 m/s | ✅ Clean (Standing start) |
+| Lap 2 | 76.91 s | 5.02 m/s | ✅ Clean |
+| Lap 3 | 75.82 s | 5.08 m/s | ✅ Clean |
+| **Lap 4** | **74.86 s** | **5.15 m/s** | 🏆 **FASTEST LAP** |
+| Lap 5 | 75.11 s | 5.13 m/s | ✅ Clean |
+| Lap 6 | 77.08 s | 5.00 m/s | ✅ Clean |
+| Lap 7 | 76.93 s | 5.02 m/s | ✅ Clean |
+| Lap 8 | 76.18 s | 5.08 m/s | ✅ Clean |
+| Lap 9 | 77.01 s | 5.00 m/s | ✅ Clean |
+| Lap 10 | 76.40 s | 5.05 m/s | ✅ Clean |
 
 ---
 

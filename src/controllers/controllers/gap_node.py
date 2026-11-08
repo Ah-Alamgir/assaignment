@@ -50,23 +50,23 @@ class ReactiveFollowGap(Node):
         self.info_pub = self.create_publisher(
             String, '/lap_info', 10)
 
-        # ----------------- Follow-the-Gap Parameters -----------------
-        self.bubble_radius = 0.50          # Safety bubble radius (m) (car width ~0.31m + margin)
-        self.max_lidar_dist = 6.8          # Max forward view distance (m)
-        self.fov_deg = 140.0               # Active field of view in degrees (+/- 70 deg)
-        self.min_gap_dist = 1.15           # Minimum distance threshold for free-space gaps (m)
-        self.disparity_threshold = 0.30    # Disparity edge detection jump (m)
-        self.car_width_margin = 0.44       # Effective car width for disparity inflation (m)
+        # ----------------- High-Performance FTG Parameters -----------------
+        self.bubble_radius = 0.48          # Safety bubble radius (m)
+        self.max_lidar_dist = 8.5          # Extended forward horizon (m)
+        self.fov_deg = 145.0               # Active field of view in degrees (+/- 72.5 deg)
+        self.min_gap_dist = 1.10           # Minimum distance threshold for free-space gaps (m)
+        self.disparity_threshold = 0.28    # Disparity edge detection jump (m)
+        self.car_width_margin = 0.42       # Effective car width for disparity inflation (m)
 
-        # ----------------- Speed & Dynamic Profile -----------------
-        self.max_speed = 6.8               # Maximum speed on straights (m/s)
-        self.sweeper_speed = 5.0           # Speed on gentle curves (m/s)
-        self.medium_turn_speed = 3.6       # Speed on medium turns (m/s)
-        self.tight_turn_speed = 2.6        # Speed on tight turns (m/s)
-        self.min_speed = 2.1               # Speed on sharp hairpins (m/s)
+        # ----------------- Aggressive Speed & Dynamic Profile -----------------
+        self.max_speed = 8.2               # Maximum speed on straights (m/s)
+        self.sweeper_speed = 6.0           # Speed on gentle curves (m/s)
+        self.medium_turn_speed = 4.4       # Speed on medium turns (m/s)
+        self.tight_turn_speed = 3.2        # Speed on tight chicanes (m/s)
+        self.min_speed = 2.4               # Speed on sharp hairpins (m/s)
         self.max_steering_angle = 0.4189   # Max steering angle (+/- ~24 degrees)
-        self.max_accel = 6.0               # Max longitudinal acceleration (m/s^2)
-        self.max_decel = 8.5               # Max longitudinal deceleration (m/s^2)
+        self.max_accel = 7.8               # High longitudinal acceleration (m/s^2)
+        self.max_decel = 9.2               # Strong threshold deceleration (m/s^2)
         self.current_speed = 0.0           # Current ramped speed (m/s)
         self.prev_steering = 0.0           # Filtered steering from previous step
         self.last_drive_time = self.get_clock().now()
@@ -97,7 +97,7 @@ class ReactiveFollowGap(Node):
         self.telemetry_timer = self.create_timer(1.0, self.publish_telemetry)
 
         self.get_logger().info("=" * 60)
-        self.get_logger().info("🏎️  F1TENTH Follow-the-Gap Controller Initialized!")
+        self.get_logger().info("🏎️  F1TENTH Ultra High-Performance Controller Initialized!")
         self.get_logger().info("📍 Assigned Track: Circuit Zandvoort | Target: 10 Clean Laps")
         self.get_logger().info("👨‍💻 Student: Alamgir Abu Hanif (Group 4)")
         self.get_logger().info("=" * 60)
@@ -115,8 +115,8 @@ class ReactiveFollowGap(Node):
         proc_ranges = np.array(ranges, dtype=np.float32)
         proc_ranges = np.nan_to_num(proc_ranges, nan=0.0, posinf=self.max_lidar_dist, neginf=0.0)
 
-        # 7-point moving average filter
-        kernel_size = 7
+        # 5-point moving average filter
+        kernel_size = 5
         smoothed = np.convolve(proc_ranges, np.ones(kernel_size) / kernel_size, mode='same')
         return np.clip(smoothed, 0.0, self.max_lidar_dist)
 
@@ -130,7 +130,6 @@ class ReactiveFollowGap(Node):
             diff = ext_ranges[i] - ext_ranges[i + 1]
             if abs(diff) > self.disparity_threshold:
                 if diff > 0:
-                    # Right side is closer -> extend onto left (further) beams
                     r_close = ext_ranges[i + 1]
                     if r_close > 0.05:
                         ang_ext = math.atan2(self.car_width_margin, r_close)
@@ -138,7 +137,6 @@ class ReactiveFollowGap(Node):
                         start_k = max(min_i, i - n_beams + 1)
                         ext_ranges[start_k:i + 1] = np.minimum(ext_ranges[start_k:i + 1], r_close)
                 else:
-                    # Left side is closer -> extend onto right (further) beams
                     r_close = ext_ranges[i]
                     if r_close > 0.05:
                         ang_ext = math.atan2(self.car_width_margin, r_close)
@@ -157,7 +155,6 @@ class ReactiveFollowGap(Node):
         closest_idx = min_i + closest_rel_idx
         min_dist = ext_ranges[closest_idx]
 
-        # Apply bubble if obstacle is within 2.5m
         if 0.05 < min_dist < 2.5:
             bubble_angle = math.atan2(self.bubble_radius, min_dist)
             b_idx = int(bubble_angle / angle_inc)
@@ -190,20 +187,18 @@ class ReactiveFollowGap(Node):
         if not gaps:
             return None
 
-        # Return the gap with maximum angular width
         return max(gaps, key=lambda g: g[1] - g[0])
 
     def find_best_point(self, start_i, end_i, ranges):
         """
         Selects the optimal steering target inside the gap:
-        Blends the deepest point (for smooth apexing & speed)
-        with the geometric center (for safe obstacle clearance).
+        Blends 68% deepest point (for smooth apexing & speed)
+        with 32% geometric center (for safe clearance).
         """
         gap_slice = ranges[start_i:end_i]
         deepest_sub_idx = start_i + int(np.argmax(gap_slice))
         center_sub_idx = (start_i + end_i) // 2
-        # 62% bias towards deepest clearance, 38% towards geometric center
-        return int(0.62 * deepest_sub_idx + 0.38 * center_sub_idx)
+        return int(0.68 * deepest_sub_idx + 0.32 * center_sub_idx)
 
     def calculate_speed(self, steering_angle, front_dist, dt):
         """
@@ -212,18 +207,18 @@ class ReactiveFollowGap(Node):
         """
         abs_steer = abs(steering_angle)
 
-        if abs_steer < 0.05 and front_dist > 5.2:
+        if abs_steer < 0.05 and front_dist > 5.5:
             target_speed = self.max_speed
-        elif abs_steer < 0.11 and front_dist > 3.8:
+        elif abs_steer < 0.10 and front_dist > 4.0:
             target_speed = self.sweeper_speed
-        elif abs_steer < 0.18:
+        elif abs_steer < 0.17:
             target_speed = self.medium_turn_speed
-        elif abs_steer < 0.26:
+        elif abs_steer < 0.25:
             target_speed = self.tight_turn_speed
         else:
             target_speed = self.min_speed
 
-        # Slew rate acceleration/deceleration limiter
+        # Slew rate limiter
         if target_speed > self.current_speed:
             self.current_speed = min(target_speed, self.current_speed + self.max_accel * dt)
         else:
@@ -236,20 +231,13 @@ class ReactiveFollowGap(Node):
     # =========================================================================
     def lidar_callback(self, data):
         """
-        Processes each incoming LiDAR scan:
-          1. Preprocesses ranges.
-          2. Extends disparities.
-          3. Applies safety bubble.
-          4. Finds max gap.
-          5. Computes steering and dynamic speed.
-          6. Publishes AckermannDriveStamped.
+        Processes each incoming LiDAR scan and publishes AckermannDriveStamped.
         """
         now = self.get_clock().now()
         dt = (now - self.last_drive_time).nanoseconds / 1e9
         dt = max(0.005, min(0.05, dt))
         self.last_drive_time = now
 
-        # Determine forward FOV indices
         half_fov = math.radians(self.fov_deg / 2.0)
         center_idx = int((-data.angle_min) / data.angle_increment)
         span_idx = int(half_fov / data.angle_increment)
@@ -274,12 +262,11 @@ class ReactiveFollowGap(Node):
         else:
             target_idx = self.find_best_point(gap[0], gap[1], bubble_ranges)
 
-        # Steering calculation with clipping
         raw_steering = (target_idx - center_idx) * data.angle_increment
         raw_steering = float(np.clip(raw_steering, -self.max_steering_angle, self.max_steering_angle))
 
-        # First-order low-pass filter on steering to avoid tire slip
-        filtered_steering = 0.20 * self.prev_steering + 0.80 * raw_steering
+        # First-order low-pass filter on steering
+        filtered_steering = 0.18 * self.prev_steering + 0.82 * raw_steering
         self.prev_steering = filtered_steering
 
         # Dynamic speed calculation
@@ -314,7 +301,6 @@ class ReactiveFollowGap(Node):
             self.race_started = True
             return
 
-        # Accumulate path distance
         dx = x - self.prev_x
         dy = y - self.prev_y
         dist_step = math.hypot(dx, dy)
@@ -322,13 +308,9 @@ class ReactiveFollowGap(Node):
         self.prev_x = x
         self.prev_y = y
 
-        # Track-relative forward coordinate s and lateral deviation d_lat
         s_curr = x * self.cos_heading + y * self.sin_heading
         d_lat = abs(-x * self.sin_heading + y * self.cos_heading)
 
-        # Detect line crossing:
-        # Crosses from s < 0 to s >= 0 within track boundaries (d_lat < 2.5m)
-        # after completing at least min_lap_distance (200m)
         if self.prev_s < 0.0 and s_curr >= 0.0 and d_lat < 2.5 and self.total_lap_distance > self.min_lap_distance:
             self.lap_count += 1
             lap_seconds = (curr_time - self.current_lap_start_time).nanoseconds / 1e9
@@ -342,7 +324,6 @@ class ReactiveFollowGap(Node):
 
             avg_lap_spd = self.total_lap_distance / max(1.0, lap_seconds)
 
-            # Log lap completion banner
             star_txt = " ⭐ NEW FASTEST LAP!" if is_fastest else ""
             self.get_logger().info("=" * 60)
             self.get_logger().info(
@@ -354,28 +335,20 @@ class ReactiveFollowGap(Node):
             )
             self.get_logger().info("=" * 60)
 
-            # Check for 10-lap challenge completion
             if self.lap_count >= self.target_laps and not self.race_finished:
                 self.race_finished = True
                 self.print_final_summary()
 
-            # Reset for next lap
             self.current_lap_start_time = curr_time
             self.total_lap_distance = 0.0
 
         self.prev_s = s_curr
-
-        # Update RViz visual HUD Marker
         self.publish_rviz_hud(x, y)
 
     # =========================================================================
     # RViz HUD & Telemetry Displays
     # =========================================================================
     def publish_rviz_hud(self, car_x, car_y):
-        """
-        Publishes a 3D Text Marker above the car in RViz, clearly showing
-        the current lap counter and live lap timer on the screen.
-        """
         marker = Marker()
         marker.header.frame_id = 'map'
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -384,21 +357,18 @@ class ReactiveFollowGap(Node):
         marker.type = Marker.TEXT_VIEW_FACING
         marker.action = Marker.ADD
 
-        # Position marker 1.8m above the car
         marker.pose.position.x = car_x
         marker.pose.position.y = car_y
         marker.pose.position.z = 1.8
         marker.pose.orientation.w = 1.0
 
-        marker.scale.z = 0.65  # Text height
+        marker.scale.z = 0.65
 
-        # Vibrant yellow/gold color
         marker.color.r = 1.0
         marker.color.g = 0.85
         marker.color.b = 0.1
         marker.color.a = 1.0
 
-        # Current lap elapsed time
         if self.current_lap_start_time:
             elapsed = (self.get_clock().now() - self.current_lap_start_time).nanoseconds / 1e9
         else:
@@ -411,10 +381,6 @@ class ReactiveFollowGap(Node):
         self.marker_pub.publish(marker)
 
     def publish_telemetry(self):
-        """
-        Prints live timer & lap progress periodically to the terminal console
-        and publishes to /lap_info topic.
-        """
         if not self.race_started or self.race_finished:
             return
 
@@ -432,9 +398,6 @@ class ReactiveFollowGap(Node):
         self.info_pub.publish(msg)
 
     def print_final_summary(self):
-        """
-        Prints the complete 10-lap competition summary report when finished.
-        """
         avg_time = float(np.mean(self.lap_times)) if self.lap_times else 0.0
         total_time = sum(self.lap_times)
 

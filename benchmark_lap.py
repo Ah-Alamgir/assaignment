@@ -3,62 +3,65 @@ import f110_gym
 import numpy as np
 import time
 
-class FollowTheGapController:
+class OptimizedFollowTheGapController:
     def __init__(self):
         # Physical parameters
-        self.bubble_radius = 0.50       # Bubble radius
-        self.max_lidar_dist = 6.8       # Max forward view distance
-        self.fov_deg = 140.0            # Field of view (+/- 70 deg)
-        self.min_gap_dist = 1.15        # Threshold for free space
+        self.bubble_radius = 0.49       # Safety bubble radius (m)
+        self.max_lidar_dist = 8.8       # Extended forward horizon (m)
+        self.fov_deg = 145.0            # Field of view (+/- 72.5 deg)
+        self.min_gap_dist = 1.12        # Free space threshold
+        self.disparity_threshold = 0.28 # Disparity jump threshold
+        self.car_width_margin = 0.43    # Effective car margin for disparity
         
-        # Vehicle dynamics / speed profile tuned for higher pace
+        # High-performance balanced dynamics
         self.current_speed = 0.0
         self.prev_steer = 0.0
-        self.max_speed = 6.8            # Top speed on long straights
-        self.min_speed = 2.1            # Speed in hairpins
-        self.max_accel = 6.0            # Longitudinal acceleration
-        self.max_decel = 8.5            # Braking deceleration
+        self.max_speed = 8.5            # Top speed on straights (m/s)
+        self.sweeper_speed = 5.8        # Sweepers (m/s)
+        self.medium_turn_speed = 4.0    # Medium corners (m/s)
+        self.tight_turn_speed = 2.9     # Chicanes / tight turns (m/s)
+        self.min_speed = 2.2            # Hairpin apex speed (m/s)
+        
+        self.max_accel = 7.5            # Acceleration rate (m/s^2)
+        self.max_decel = 9.2            # Deceleration rate (m/s^2)
         self.dt = 0.01
 
     def process_scan(self, raw_ranges, angle_min, angle_inc):
         ranges = np.array(raw_ranges, dtype=np.float32)
         ranges = np.nan_to_num(ranges, nan=0.0, posinf=self.max_lidar_dist, neginf=0.0)
         
-        # FOV indices
         half_fov = np.radians(self.fov_deg / 2.0)
         center_idx = int((-angle_min) / angle_inc)
         span_idx = int(half_fov / angle_inc)
         min_i = max(0, center_idx - span_idx)
         max_i = min(len(ranges), center_idx + span_idx)
         
-        # Preprocessing: moving average
-        kernel_size = 7
+        # 5-point moving average filter
+        kernel_size = 5
         smoothed = np.convolve(ranges, np.ones(kernel_size) / kernel_size, mode='same')
         proc_ranges = np.clip(smoothed, 0.0, self.max_lidar_dist)
         
         # Disparity extender
-        disp_thresh = 0.30
-        car_width = 0.44
         ext_ranges = np.copy(proc_ranges)
         for i in range(min_i, max_i - 1):
             diff = ext_ranges[i] - ext_ranges[i + 1]
-            if abs(diff) > disp_thresh:
+            if abs(diff) > self.disparity_threshold:
                 if diff > 0:
                     r_close = ext_ranges[i + 1]
                     if r_close > 0.05:
-                        ang_ext = np.arctan(car_width / r_close)
+                        ang_ext = np.arctan(self.car_width_margin / r_close)
                         n_beams = int(ang_ext / angle_inc)
                         start_k = max(min_i, i - n_beams + 1)
                         ext_ranges[start_k:i + 1] = np.minimum(ext_ranges[start_k:i + 1], r_close)
                 else:
                     r_close = ext_ranges[i]
                     if r_close > 0.05:
-                        ang_ext = np.arctan(car_width / r_close)
+                        ang_ext = np.arctan(self.car_width_margin / r_close)
                         n_beams = int(ang_ext / angle_inc)
                         end_k = min(max_i, i + 1 + n_beams)
                         ext_ranges[i + 1:end_k] = np.minimum(ext_ranges[i + 1:end_k], r_close)
 
-        # Safety bubble around closest obstacle
+        # Safety bubble
         closest_idx = min_i + np.argmin(ext_ranges[min_i:max_i])
         min_dist = ext_ranges[closest_idx]
         if min_dist < 2.5 and min_dist > 0.05:
@@ -92,31 +95,28 @@ class FollowTheGapController:
             gap_slice = ext_ranges[g_start:g_end]
             deepest_sub_idx = g_start + np.argmax(gap_slice)
             center_sub_idx = (g_start + g_end) // 2
-            # Balance deepest point with center of gap
-            target_idx = int(0.62 * deepest_sub_idx + 0.38 * center_sub_idx)
+            target_idx = int(0.66 * deepest_sub_idx + 0.34 * center_sub_idx)
 
         raw_steer = (target_idx - center_idx) * angle_inc
         raw_steer = float(np.clip(raw_steer, -0.4189, 0.4189))
 
-        # Smooth steering transitions
-        steer = 0.20 * self.prev_steer + 0.80 * raw_steer
+        steer = 0.18 * self.prev_steer + 0.82 * raw_steer
         self.prev_steer = steer
 
         # Dynamic speed profiling
         abs_steer = abs(steer)
         front_dist = ext_ranges[center_idx]
-        if abs_steer < 0.05 and front_dist > 5.2:
+        if abs_steer < 0.05 and front_dist > 5.8:
             target_speed = self.max_speed
-        elif abs_steer < 0.11 and front_dist > 3.8:
-            target_speed = 5.0
-        elif abs_steer < 0.18:
-            target_speed = 3.6
-        elif abs_steer < 0.26:
-            target_speed = 2.6
+        elif abs_steer < 0.10 and front_dist > 4.0:
+            target_speed = self.sweeper_speed
+        elif abs_steer < 0.17:
+            target_speed = self.medium_turn_speed
+        elif abs_steer < 0.25:
+            target_speed = self.tight_turn_speed
         else:
             target_speed = self.min_speed
 
-        # Ramp speed
         if target_speed > self.current_speed:
             self.current_speed = min(target_speed, self.current_speed + self.max_accel * self.dt)
         else:
@@ -126,13 +126,13 @@ class FollowTheGapController:
 
 
 def run_benchmark(target_laps=10):
-    print(f"--- Running {target_laps} Laps High-Performance Benchmark on Zandvoort ---")
+    print(f"--- Running {target_laps} Laps High-Performance Optimized Benchmark on Zandvoort ---")
     map_path = '/home/abuhanif/F1Tenth-Repository/src/f1tenth_gym_ros/maps/Zandvoort_map'
     env = gym.make('f110_gym:f110-v0', map=map_path, map_ext='.png', num_agents=1, disable_env_checker=True).unwrapped
     
     obs, _, done, _ = env.reset(np.array([[0.0, 0.0, 1.195]]))
 
-    controller = FollowTheGapController()
+    controller = OptimizedFollowTheGapController()
     scan_fov = 4.7
     scan_beams = 1080
     angle_min = -scan_fov / 2.0
