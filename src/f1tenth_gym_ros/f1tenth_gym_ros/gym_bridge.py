@@ -138,6 +138,8 @@ class GymBridge(Node):
         else:
             self.has_opp = False
             self.obs, _ , self.done, _ = self.env.reset(np.array([[sx, sy, stheta]]))
+            self.env.step(np.array([[0.0, 0.0]]))
+            self.obs, _ , self.done, _ = self.env.reset(np.array([[sx, sy, stheta]]))
             self.ego_scan = list(self.obs['scans'][0])
 
         # sim physical step timer

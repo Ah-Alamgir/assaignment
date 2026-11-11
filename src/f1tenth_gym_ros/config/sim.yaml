@@ -42,7 +42,7 @@ bridge:
     scan_beams: 1080
 
     # map parameters
-    map_path: '/home/abuhanif/F1Tenth-Repository/src/f1tenth_gym_ros/maps/Zandvoort_map'
+    map_path: '/mnt/d/assaignment/src/f1tenth_gym_ros/maps/Zandvoort_map'
     map_img_ext: '.png'
 
     # opponent parameters

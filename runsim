@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# F1TENTH Autonomous Racing - One-Command Simulation & RViz Runner (runsim)
+# Course: Autonomous Vehicles
+# Track: Circuit Zandvoort (Group 4)
+# Driver: Alamgir Abu Hanif
+# ==============================================================================
+
+# Robustly resolve script location even if invoked through symlinks
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+WORKSPACE_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+
+if [ ! -d "$WORKSPACE_DIR/src/f1tenth_gym_ros" ] && [ -d "/mnt/d/assaignment/src/f1tenth_gym_ros" ]; then
+    WORKSPACE_DIR="/mnt/d/assaignment"
+fi
+
+cd "$WORKSPACE_DIR"
+
+cleanup() {
+    echo -e "\n\033[1;33m[!] Stopping simulation and RViz2...\033[0m"
+    pkill -f "gap_node|gym_bridge|rviz2|map_server|lifecycle_manager|robot_state_publisher" 2>/dev/null
+    sleep 0.3
+    pkill -9 -f "gap_node|gym_bridge|rviz2|map_server|lifecycle_manager|robot_state_publisher" 2>/dev/null
+    exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+# Clean up any leftover processes from previous runs
+pkill -f "gap_node|gym_bridge|rviz2|map_server|lifecycle_manager|robot_state_publisher" 2>/dev/null
+sleep 0.3
+pkill -9 -f "gap_node|gym_bridge|rviz2|map_server|lifecycle_manager|robot_state_publisher" 2>/dev/null
+sleep 0.5
+
+# Source ROS 2 environment
+if [ -f "/opt/ros/jazzy/setup.bash" ]; then
+    source /opt/ros/jazzy/setup.bash
+elif [ -f "/opt/ros/humble/setup.bash" ]; then
+    source /opt/ros/humble/setup.bash
+else
+    echo "Error: No ROS 2 installation found in /opt/ros!"
+    exit 1
+fi
+
+# Check and build workspace if needed
+if [ ! -f "$WORKSPACE_DIR/install/setup.bash" ]; then
+    echo -e "\033[1;33m[*] Building workspace with colcon...\033[0m"
+    colcon build --symlink-install
+fi
+
+# Source workspace install
+source "$WORKSPACE_DIR/install/setup.bash"
+
+# Launch F1TENTH Simulator & RViz2 silently in background so console stays clean
+ros2 launch f1tenth_gym_ros gym_bridge_launch.py > /tmp/f1tenth_sim.log 2>&1 &
+SIM_PID=$!
+
+# Wait until gym_bridge is active and publishing /scan (and RViz2 is up)
+for _ in $(seq 1 30); do
+    if ros2 topic list 2>/dev/null | grep -q "^/scan$"; then
+        break
+    fi
+    sleep 0.5
+done
+sleep 1.0
+
+# Ensure RViz2 window is mapped and raised on Windows WSLg desktop
+python3 - <<'EOF' 2>/dev/null || true
+import ctypes, subprocess, re, time
+try:
+    out = subprocess.check_output(["xwininfo", "-root", "-tree"], env={"DISPLAY": ":0"}, text=True)
+    m = re.search(r'(0x[0-9a-fA-F]+)\s+"[^"]*RViz[^"]*":\s+\("rviz2"\s+"rviz2"\)', out)
+    if m:
+        win = ctypes.c_ulong(int(m.group(1), 16))
+        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        dpy = ctypes.c_void_p(x11.XOpenDisplay(b":0"))
+        if dpy:
+            x11.XUnmapWindow(dpy, win)
+            x11.XFlush(dpy)
+            time.sleep(0.2)
+            x11.XMapRaised(dpy, win)
+            x11.XMoveWindow(dpy, win, 80, 60)
+            x11.XFlush(dpy)
+except Exception:
+    pass
+EOF
+
+# Start Follow-the-Gap Controller with live telemetry and lap timer in foreground
+ros2 run controllers gap_node
+
+# Keep RViz2 open if controller exits naturally until user presses Ctrl+C
+wait $SIM_PID
